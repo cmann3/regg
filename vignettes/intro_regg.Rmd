@@ -1,0 +1,188 @@
+---
+title: "Introduction to Regressions in regg"
+author: "Christopher Mann"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+The `regg` package introduces a simple and easy framework for fitting all types of regression models. Let us look at how estimate a regression in `regg`, along with many of the available features. Let's first load the library.
+
+```{r message=FALSE, warning=FALSE}
+library(regg)
+```
+
+We will use the `"okun_state"` data set that is included in `regg`. It contains estimates for the unemployment rate and real GSP growth rate across all states from 2018 to 2023. We will use the data set to estimate Okun's Law at the state level.
+
+```{r}
+data("okun_state")
+head(okun_state)
+```
+
+
+## Baby's First Regressions
+
+A simple, OLS regression can be estimated using the `ols` function. It behaves very similar to `lm` in the `stats` library that is pre-loaded in R by default. One key difference is that `ols` accepts the data set as the first argument. This allows the results to be easily piped into other commands.
+
+```{r}
+ols(okun_state, ur ~ gsp)
+```
+
+By default, `ols` prints a simple regression table. Outside of RMarkdown, the terms and numbers are formatted so that negative and insignificant terms are rapidly identified. Another key difference with `lm` is that formulas are not necessary. Instead, you can separate the terms via a comma much like specifying terms for `select` in the `tidyverse`. The first term is considered the dependent variable. Let's add another variable using features from `select`. Notice that I have subset the data to only states whose names begin with "A" to reduce the number of rows in the table. Any argument available to `lm` is also available for `ols`.
+
+```{r}
+ols(okun_state, ur, gsp, starts_with("s"), 
+    subset = substr(state, 1, 1) == "A")
+```
+
+This would be quite annoying to read if all states were printed and, frankly, we likely don't care about the coefficients on the individual states. Luckily, we easily hide those columns so that our output is clean and easy to read by surrounding the variables with the `hide` function.
+
+```{r}
+ols(okun_state, ur, gsp, hide(starts_with("s")))
+```
+
+
+## Chaining Regressions
+
+Since `ols` and other `regg` functions are pipe-friendly, we can actually pipe one regression into another. When this is done, the second regression inherits all other attributes from the previous one. The printed output also changes to a more convenient table where each column represents a different regression. By default, each row represents the coefficient, its significance level, and the standard error in parentheses on the next line. When a variable is hidden, another line is generated in the table describing which models include the hidden variable.
+
+```{r}
+okun_state |>
+  ols(ur, gsp) |>
+  ols(ur, gsp, hide(state))
+```
+
+It may be more convenient to use the `add_x` or `reg_step` functions. `add_x` uses the previous model as the baseline, along with all terms. Then, the user specifies which additional variables to include in the next regression. `reg_step` is similar, but each additional term - separated by commas - is treated as a new regression including all terms that came before. Therefore, the previous set of regressions could also be estimated as either of the following.
+
+```{r eval=FALSE}
+okun_state |>
+  ols(ur, gsp) |>
+  add_x(hide(state))
+
+okun_state |>
+  ols(ur, gsp) |>
+  reg_step(hide(state))
+```
+
+
+## Including More Statistics and Tests
+
+The `ols` function includes the number of observations `N`, the R-squared, and Adjusted R-Squared. Additional statistics are easily added by piping the regression results into the appropriate command. Regression statistics are prefaced by `stat_` and tests by `test_` in `regg` conventions.
+
+```{r}
+okun_state       |>
+  ols(ur, gsp)   |>
+  stat_conf(.99) |>          ## 99% confidence interval (default=95%)
+  stat_rmse()                ## root mean squared error
+```
+
+
+## Variable Selection
+
+The variable selection that powers `ols` and other regression techniques relies on `reg_select` and has many features not available in the standard `tidyselect`. For example, mathematical functions and operations can be used directly inside of the selection. Similarly, the `y()` function allows you grab the dependent variable, which can be convenient when constructing general models.
+
+```{r}
+okun_state |>
+  ols(ur, gsp, sin(gsp), y()^2) 
+```
+
+Note that mathematical functions such as `log` or `sin` are automatically ignored when applied to dummy variables.
+
+```{r}
+ols(okun_state, gsp, log(everything()), 
+    subset = substr(state, 1, 1) == "A")
+```
+
+
+
+Another useful command is `ar(p)`, which includes lagged versions - up to `p` - of the dependent variable.
+
+```{r}
+okun_state |>
+  ols(ur, gsp, ar(2))
+```
+
+Notice that `N` only declined by 2 when we included the two lags. Our data, however, is a panel where values vary by state and year. Luckily, there is a correction for this. `reg_select` supports grouped data from `dplyr`. Let's look at the model matrix to confirm. First, look at the model matrix of the ungrouped data.
+
+```{r}
+okun_state |>
+  reg_select(ur, gsp, ar(2)) |>
+  head(n = 10)
+```
+
+Now, let's use the `group_by` function from `dplyr`. Note that there are only 6 years for each state.
+
+```{r}
+okun_state |>
+  dplyr::group_by(state) |>
+  reg_select(ur, gsp, ar(2)) |>
+  head(n = 10)
+```
+
+Now, let's look at the `ols` results. 
+
+```{r}
+okun_state |>
+  dplyr::group_by(state) |>
+  ols(ur, gsp, ar(2))
+```
+
+Sure enough, the number of observations declines by $2\times50 = 100$. Another convenient function is `trend` which includes a linear trend in the data that automatically adjusts to grouped data.
+
+```{r}
+okun_state |>
+  dplyr::group_by(state) |>
+  reg_select(ur, ar(1), trend()) |>
+  head(n = 10)
+```
+
+
+```{r}
+okun_state |>
+  dplyr::group_by(state) |>
+  ols(ur, ar(1)) |>
+  add_x(trend())
+```
+
+
+## Changing Variable Names
+
+Sometimes, the desired name in the table does not match the variable in the data set. `:=` can be used inside of `reg_select` - and thus `regg` functions - to set the new name of the variable. It can also be convenient when you want to reference a variable that you just created. 
+
+```{r}
+okun_state |>
+  ols(ur, gsp,  gsp_2 := log(gsp^2), gsp_3 := exp(gsp_2)/100)
+```
+
+
+The value on the left-hand side of `:=` does not have to be a symbol or character; it can also be a function or formula convertible to a function via `purrr` lambda syntax. You can see the details using `?as_lambda` in R. When a function is passed on the left-hand side, the function is applied to the column names of all objects on the right-hand side of `:=` and the new names are returned. For example, we can remove the prefix `"state_"` to the dummy variables below.
+
+```{r}
+ols(okun_state, ur, gsp, ~gsub("state_", "", .x)  := state, 
+    subset = substr(state, 1, 1) == "A")
+```
+
+
+
+
+## Residual Plots
+
+For right now, residual plots are created through `ggplot2` when `plot` is called.
+
+```{r}
+okun_state |>
+  ols(ur, gsp, ar(2)) |>
+  plot()
+```
+
+

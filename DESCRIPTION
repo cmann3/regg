@@ -1,0 +1,26 @@
+Package: regg
+Type: Package
+Title: Extensible Grammar for Regression Analysis
+Version: 0.0.1
+Authors@R: c(
+    person("Christopher", "Mann", email = "cmann3@unl.edu", role = c("aut", "cre")),
+    person("Alejandro", "Abarca", email = "abarcaa@oregonstate.edu", role = "ctb"),
+    person("Justin", "Ho", email = "justinhjy1004@gmail.com", role = "ctb"))
+Maintainer: Christopher Mann <cmann3@unl.edu>
+Description: An ecosystem and grammar, based on the tidyverse, for conducting
+    regression analysis and easily developing regression methods, statistics, 
+    and tests. The framework is designed to assist users by offering enhanced 
+    model selection tools using non-standard evaluation, allowing multiple 
+    regression models to be easily estimated and compared, and a simple method 
+    for changing standard errors, including statistics, and performing tests.
+Depends: generics
+Imports: 
+    dplyr,
+    ggplot2,
+    rlang,
+    stats,
+    tibble
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.3.1
